@@ -7,10 +7,10 @@ import System.IO.Unsafe
 -- Copy Idris' ffi types, as that's what I want to use later
 
 data FTy = FInt | FFloat | FChar | FString {- | FPtr -} | FUnit
+           deriving Show
 
-data Res = IntRes Int | FloatRes Float | CharRes Char | StringRes String | UnitRes ()
-
---exec :: String -> FTy -> FTy -> Res
+data FFn = Sig [FTy] FTy
+           deriving Show
 
 type SOHandle = Ptr ()
 
