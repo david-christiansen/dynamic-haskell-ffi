@@ -11,10 +11,6 @@ import System.IO
 import Control.Monad (guard)
 import Debug.Trace
 
-trim :: String -> String
-trim = reverse . dropWhile (flip elem " \t") . reverse . dropWhile (flip elem " \t")
-
-
 main :: IO ()
 main = do ln <- getLine
           if ln == ":q"
@@ -26,10 +22,8 @@ main = do ln <- getLine
 processLine :: String -> IO ()
 processLine ln = case parseSig ln of
                    Right (file, name, Exists typ) ->
-                       do putStrLn $ "in " ++ file ++ ", " ++ name ++ " : " ++ show typ
-                          let handle = dlopen file
+                       do let handle = dlopen file
                           let f = dlsym handle name typ
-                          putStrLn "got fn"
                           processArgs typ f
                    Left err -> putStrLn $ "Error: " ++ show err
 
