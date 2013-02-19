@@ -6,6 +6,11 @@ import Foreign.Ptr
 import System.IO.Unsafe
 import Data.List
 
+data Exists c = forall a. Exists (c a)
+
+instance Show (Exists c) where
+  show x = "Exists <existential>"
+
 data FBase :: * -> * where
   FInt :: FBase Int
   FFloat :: FBase Float
@@ -43,9 +48,9 @@ mkString str = unsafePerformIO $ newCString str
 dlopen :: String -> SOHandle
 dlopen lib = c_dlopen (mkString lib)
 
-dlsym :: SOHandle -> String -> FSig a -> a
-dlsym handle name (FArg FDouble (FReturn FDouble)) = mkFn (c_dlsym handle (mkString name)) . realToFrac
-dlsym _ _ s = error $ "Not implemented for " ++ show s
+--dlsym :: SOHandle -> String -> FSig a -> a
+--dlsym handle name (FArg FDouble (FReturn FDouble)) = mkFn (c_dlsym handle (mkString name)) . realToFrac
+--dlsym _ _ s = error $ "Not implemented for " ++ show s
 
 libc = dlopen "/lib/x86_64-linux-gnu/libc.so.6"
 
@@ -75,6 +80,11 @@ foreignImportName sig = "mk" ++ name' sig ++ "Fn"
           name' (FArg a r) = show a ++ name' r
           name' (FReturn r) = show r
 
+genForeignDlsym :: FSig a -> String
+genForeignDlsym sig = header ++ "\n  " ++ name ++ " :: " ++ typ
+    where header = "foreign import ccall unsafe \"dlfcn.h dlsym\""
+          name = "c_" ++ foreignImportName sig
+          typ = "SOHandle -> CString -> FunPtr (" ++ toCSig sig ++ ")"
 
 genForeignImport :: FSig a -> String
 genForeignImport sig = header ++ "  " ++ name ++ " :: " ++ typ
@@ -83,9 +93,9 @@ genForeignImport sig = header ++ "  " ++ name ++ " :: " ++ typ
           typ = "FunPtr (" ++ toCSig sig ++ ") -> (" ++ toHSig sig ++ ")"
 
 genCase :: FSig a -> String
-genCase sig =  bindings ++ " = " ++ foreignImportName sig ++ " " ++ getCFn ++ " . " ++ conv sig
+genCase sig =  bindings ++ " = " ++ foreignImportName sig ++ " " ++ getCFn -- ++ " . " ++ conv sig
     where bindings = "dlsym handle name (" ++ show sig ++ ")"
-          getCFn = "(c_dlsym handle (mkString name))"
+          getCFn = "(c_" ++ foreignImportName sig ++ " handle (mkString name))"
           conv :: FSig a -> String
           conv (FArg _ r) = conv r
           conv (FReturn FInt) = "fromIntegral"
@@ -115,22 +125,25 @@ mapSL f (Cons s r) = f s : mapSL f r
 
 -- Return exhaustive list of up-to-n-arg sigs.
 enumSigs :: Int -> SigList
-enumSigs 0 = Cons (FReturn FInt) $
-             Cons (FReturn FFloat) $
-             Cons (FReturn FDouble) $
-             Nil
-enumSigs n = next `concatSL`
-             addArg FInt next `concatSL`
-             addArg FDouble next `concatSL`
-             addArg FFloat next
-                 where next = enumSigs (n - 1)
+enumSigs n = foldl concatSL (enumSigs' 1) $ map enumSigs' [2 .. n]
+    where enumSigs' 0 = Cons (FReturn FInt) $
+                        Cons (FReturn FFloat) $
+                        Cons (FReturn FDouble) $
+                        Nil
+          enumSigs' n = addArg FInt next `concatSL`
+                        addArg FDouble next `concatSL`
+                        addArg FFloat next
+                 where next = enumSigs' (n - 1)
 
 -- Code generation
 
-genImports n = intercalate "\n\n" $ mapSL genForeignImport $ enumSigs n
+genImports n = (intercalate "\n\n" $ mapSL genForeignImport $ enumSigs n) ++
+               "------------------\n\n" ++
+               (intercalate "\n\n" $ mapSL genForeignDlsym $ enumSigs n)
+
 genCases n = intercalate "\n" $ mapSL genCase $ enumSigs n
-genDlsym n = header ++ "\n" ++ genCases n ++ fail
+genDlsym n = header ++ "\n" ++ genCases n ++ "\n" ++ fail
     where header = "dlsym :: SOHandle -> String -> FSig a -> a"
           fail = "dlsym _ _ s = error $ \"Not implemented for \" ++ show s"
 genModule n = header ++ "\n\n" ++ genImports n ++ "\n-----------\n" ++ genDlsym n
-    where header = "module Dlsym where\nimport More"
+    where header = "{-# LANGUAGE GADTs #-}\nmodule Dlsym where\nimport FFI\nimport Foreign.C\nimport Foreign.Ptr\n"
