@@ -61,19 +61,28 @@ typ = int <|> double <|> float
           double = string "double" >> return FDouble
           float = string "float" >> return FFloat
 
+orEmpty :: Maybe String -> String
+orEmpty = fromMaybe ""
+
+orZero  :: Maybe String -> String
+orZero = fromMaybe "0"
+
 int :: Parser FArg
-int = do digits <- many1 digit
-         return $ AInt $ read digits
+int = do sign <- optionMaybe $ string "-"
+         digits <- many1 digit
+         return . AInt . read $ orEmpty sign ++ digits
 
 float :: Parser FArg
-float = do wholePart <- many1 digit
+float = do sign <- optionMaybe $ string "-"
+           wholePart <- many1 digit
            decPart <- optionMaybe $ char '.' >> many1 digit
-           return $ AFloat $ read $ wholePart ++ "." ++ fromMaybe "0" decPart
+           return . AFloat . read $ orEmpty sign ++ wholePart ++ "." ++ fromMaybe "0" decPart
 
 double :: Parser FArg
-double = do wholePart <- many1 digit
+double = do sign <- optionMaybe $ string "-"
+            wholePart <- many1 digit
             decPart <- optionMaybe $ char '.' >> many1 digit
-            return $ ADouble $ read $ wholePart ++ "." ++ fromMaybe "0" decPart
+            return . ADouble . read $ orEmpty sign ++ wholePart ++ "." ++ fromMaybe "0" decPart
 
 arg :: FTy -> Parser FArg
 arg FInt    = int
